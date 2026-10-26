@@ -327,6 +327,9 @@ func (s *Service) mintIDToken(g DelegatedGrant, now int64) (string, error) {
 	if g.AMR != "" {
 		claims["amr"] = []string{g.AMR}
 	}
+	if roles := s.userAppRoles(g.User.ID, g.App.ID); len(roles) > 0 {
+		claims["roles"] = roles
+	}
 	// auth_time. Two independent reasons to emit it, and they are not the same
 	// rule:
 	//
@@ -349,6 +352,14 @@ func (s *Service) mintIDToken(g DelegatedGrant, now int64) (string, error) {
 	return s.signTenant(tid, claims)
 }
 
+func (s *Service) userAppRoles(userID, resourceID string) []string {
+	values, _, err := s.Store.AssignedAppRoleValues(userID, resourceID)
+	if err != nil {
+		return nil
+	}
+	return values
+}
+
 func (s *Service) mintAccessDelegated(g DelegatedGrant, aud string, now int64) (string, error) {
 	tid := s.resolveTenant(g.TenantID)
 	delegatedAccessSec, _, _ := s.lifetimesFor(g.App.ID)
@@ -359,6 +370,7 @@ func (s *Service) mintAccessDelegated(g DelegatedGrant, aud string, now int64) (
 		"aud": aud,
 		"iat": now, "nbf": now, "exp": now + int64(delegatedAccessSec),
 		"tid": tid, "oid": g.User.ID,
+		"name": g.User.DisplayName, "preferred_username": g.User.UserPrincipalName,
 		"azp": g.App.ID, "appid": g.App.ID,
 		"scp": strings.Join(scpNames, " "),
 		"ver": "2.0",
@@ -385,6 +397,11 @@ func (s *Service) mintAccessDelegated(g DelegatedGrant, aud string, now int64) (
 			}
 		}
 		claims["scp"] = strings.Join(kept, " ")
+	}
+	if aud != s.Cfg.GraphResourceID && (resourceApp.ID == aud || resourceApp.AppIDURI == aud) {
+		if roles := s.userAppRoles(g.User.ID, resourceApp.ID); len(roles) > 0 {
+			claims["roles"] = roles
+		}
 	}
 	s.applyTokenConfig(claims, resourceApp, g.User, "accessToken")
 	s.enrich(claims, g.App, g.User, "accessToken")

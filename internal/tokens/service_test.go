@@ -251,6 +251,86 @@ func TestMintAccessDelegatedResourceApp(t *testing.T) {
 	}
 }
 
+func TestDelegatedTokensCarryUserIdentityAndAssignedRoles(t *testing.T) {
+	st, svc, _ := newService(t)
+	clientApp := makeApp(t, st, &store.App{ID: "spa-app"})
+	resourceApp := makeApp(t, st, &store.App{ID: "api-app", AppIDURI: "api://mercury"})
+	for _, r := range []*store.AppRole{
+		{ID: "role-admin", AppID: resourceApp.ID, Value: "Admin", AllowedMemberTypes: "User", IsEnabled: true},
+		{ID: "role-user", AppID: resourceApp.ID, Value: "User", AllowedMemberTypes: "User", IsEnabled: true},
+		{ID: "role-viewer", AppID: clientApp.ID, Value: "Viewer", AllowedMemberTypes: "User", IsEnabled: true},
+	} {
+		if err := st.AddRole(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin := makeUser(t, st, "u-admin", "Ada", "Lovelace")
+	plain := makeUser(t, st, "u-plain", "Alan", "Turing")
+	for i, a := range []struct{ user, resource, role string }{
+		{admin.ID, resourceApp.ID, "role-admin"},
+		{admin.ID, resourceApp.ID, "role-user"},
+		{admin.ID, clientApp.ID, "role-viewer"},
+	} {
+		if err := st.CreateAppRoleAssignment(&store.AppRoleAssignment{
+			ID: "ara-" + string(rune('a'+i)), PrincipalID: a.user, PrincipalType: "User",
+			ResourceID: a.resource, AppRoleID: a.role, CreatedAt: st.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp, err := svc.BuildDelegatedResponse(DelegatedGrant{
+		App: clientApp, User: admin, Scopes: []string{"openid", "access_as_user"},
+		Resource: resourceApp.AppIDURI,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, _ := DecodeUnverified(resp.AccessToken)
+	if access["preferred_username"] != admin.UserPrincipalName || access["name"] != admin.DisplayName {
+		t.Fatalf("access identity = %v / %v", access["preferred_username"], access["name"])
+	}
+	roles, _ := access["roles"].([]any)
+	got := map[any]bool{}
+	for _, r := range roles {
+		got[r] = true
+	}
+	if len(roles) != 2 || !got["Admin"] || !got["User"] {
+		t.Fatalf("access roles = %v", access["roles"])
+	}
+	id, _ := DecodeUnverified(resp.IDToken)
+	idRoles, _ := id["roles"].([]any)
+	if len(idRoles) != 1 || idRoles[0] != "Viewer" {
+		t.Fatalf("id roles = %v", id["roles"])
+	}
+
+	graphResp, err := svc.BuildDelegatedResponse(DelegatedGrant{
+		App: clientApp, User: admin, Scopes: []string{"User.Read"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graphAccess, _ := DecodeUnverified(graphResp.AccessToken)
+	if _, ok := graphAccess["roles"]; ok {
+		t.Fatalf("graph token must not carry app roles: %v", graphAccess["roles"])
+	}
+
+	plainResp, err := svc.BuildDelegatedResponse(DelegatedGrant{
+		App: clientApp, User: plain, Scopes: []string{"openid", "access_as_user"},
+		Resource: resourceApp.AppIDURI,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainAccess, _ := DecodeUnverified(plainResp.AccessToken)
+	if _, ok := plainAccess["roles"]; ok {
+		t.Fatalf("unassigned user must not get roles: %v", plainAccess["roles"])
+	}
+	if plainAccess["preferred_username"] != plain.UserPrincipalName {
+		t.Fatalf("plain preferred_username = %v", plainAccess["preferred_username"])
+	}
+}
+
 // ---- BuildAppOnlyResponse (home + non-home tenant) ----
 
 func TestBuildAppOnlyResponse(t *testing.T) {

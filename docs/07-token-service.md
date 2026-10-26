@@ -47,6 +47,7 @@ device code); **omitted** for client credentials. `Cache-Control: no-store`,
 | `name` / `preferred_username` | display_name / UPN |
 | `email` | user.mail (omitted when null) |
 | `nonce` | echoed from authorize (absent on refresh re-mint) |
+| `roles` | app-role values assigned to the user on the client app (omitted when none) |
 | `ver` | `"2.0"` |
 
 ## Access token claims
@@ -57,9 +58,10 @@ device code); **omitted** for client credentials. `Cache-Control: no-store`,
 | `sub` | pairwise (user+app) | the app's `appId` |
 | `aud` | per audience rule below | per audience rule |
 | `oid` | user id | **omitted** |
+| `name` / `preferred_username` | display_name / UPN | **omitted** |
 | `azp` / `appid` | client appId | client appId |
 | `scp` | space-delimited granted scope **names** | **omitted** |
-| `roles` | omitted | array of auto-granted app roles (may be `[]`) |
+| `roles` | app-role values assigned to the user on the resource app (omitted when none, and on Graph tokens) | array of auto-granted app roles (may be `[]`) |
 
 **Audience rule:** resource scope `api://<x>/<scope>` or app GUID → `aud` = that
 `app_id_uri`/GUID. Graph scopes (`https://graph.microsoft.com/...` or known bare names

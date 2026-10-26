@@ -184,7 +184,10 @@ Because an app registration is its own service principal here, `clientId` /
 - **Delegated (user) tokens** — the requested delegated scopes are intersected with
   the `oauth2PermissionGrant`s that apply to `(client, resource, user)`
   (`AllPrincipals`, or `Principal` matching the signed-in user); only consented
-  scopes land in `scp`.
+  scopes land in `scp`. App roles assigned to the signed-in **user**
+  (`appRoleAssignedTo` with a user `principalId`) land in `roles`: on the access
+  token for the resource app's assignments, on the ID token for the client app's.
+  Graph-audience tokens never carry them.
 
 **Divergence.** The emulator's client-credentials flow historically auto-grants an
 app its declared roles (`docs/07-token-service.md`). That fallback is preserved for
@@ -338,6 +341,6 @@ the user, finds it in `directory/deletedItems`, restores it, and finally purges 
 asserting each response is the shape an unmodified Graph client expects.
 
 The token-claim linkage the stored state drives — `wids` from directory roles, `scp`
-from delegated grants, `roles` from application grants — is proven by the Go
-integration tests (`internal/server/*_test.go`), which mint real tokens and decode
-the claims.
+from delegated grants, `roles` from application grants and user app-role
+assignments — is proven by the Go integration tests (`internal/server/*_test.go`,
+`internal/tokens/service_test.go`), which mint real tokens and decode the claims.
